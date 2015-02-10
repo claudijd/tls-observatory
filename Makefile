@@ -37,31 +37,31 @@ GOCFLAGS	:=
 MKDIR		:= mkdir
 INSTALL		:= install
 
-all: go_get_deps certRetriever certAnalyser webapi retrieveTLSInfo
+all: retriever
 
-retrieveTLSInfo:
-	echo building retrieveTLSInfo for $(OS)/$(ARCH)
-	$(MKDIR) -p $(BINDIR)
-	$(GO) build $(GOOPTS) -o $(BINDIR)/retrieveTLSInfo-$(BUILDREV)$(BINSUFFIX) $(GOLDFLAGS) src/retrieveTLSInfo.go
-	[ -x "$(BINDIR)/retrieveTLSInfo-$(BUILDREV)$(BINSUFFIX)" ] && echo SUCCESS && exit 0
+# retrieveTLSInfo:
+# 	echo building retrieveTLSInfo for $(OS)/$(ARCH)
+# 	$(MKDIR) -p $(BINDIR)
+# 	$(GO) build $(GOOPTS) -o $(BINDIR)/retrieveTLSInfo-$(BUILDREV)$(BINSUFFIX) $(GOLDFLAGS) src/retrieveTLSInfo.go
+# 	[ -x "$(BINDIR)/retrieveTLSInfo-$(BUILDREV)$(BINSUFFIX)" ] && echo SUCCESS && exit 0
 
-certRetriever:
-	echo building certRetriever for $(OS)/$(ARCH)
+retriever:
+	echo building retriever for $(OS)/$(ARCH)
 	$(MKDIR) -p $(BINDIR)
-	$(GO) build $(GOOPTS) -o $(BINDIR)/certRetriever-$(BUILDREV)$(BINSUFFIX) $(GOLDFLAGS) certRetriever
-	[ -x "$(BINDIR)/certRetriever-$(BUILDREV)$(BINSUFFIX)" ] && echo SUCCESS && exit 0
+	$(GO) build $(GOOPTS) -o $(BINDIR)/retriever-$(BUILDREV)$(BINSUFFIX) $(GOLDFLAGS) retriever
+	[ -x "$(BINDIR)/retriever-$(BUILDREV)$(BINSUFFIX)" ] && echo SUCCESS && exit 0
 
-certAnalyser:
-	echo building certAnalyser for $(OS)/$(ARCH)
+analyser:
+	echo building analyser for $(OS)/$(ARCH)
 	$(MKDIR) -p $(BINDIR)
-	$(GO) build $(GOOPTS) -o $(BINDIR)/certAnalyzer-$(BUILDREV)$(BINSUFFIX) $(GOLDFLAGS) certAnalyser
-	[ -x "$(BINDIR)/certAnalyzer-$(BUILDREV)$(BINSUFFIX)" ] && echo SUCCESS && exit 0
+	$(GO) build $(GOOPTS) -o $(BINDIR)/analyzer-$(BUILDREV)$(BINSUFFIX) $(GOLDFLAGS) analyser
+	[ -x "$(BINDIR)/analyzer-$(BUILDREV)$(BINSUFFIX)" ] && echo SUCCESS && exit 0
 
-webapi:
-	echo building web-api for $(OS)/$(ARCH)
-	$(MKDIR) -p $(BINDIR)
-	$(GO) build $(GOOPTS) -o $(BINDIR)/web-api-$(BUILDREV)$(BINSUFFIX) $(GOLDFLAGS) web-api
-	[ -x "$(BINDIR)/web-api-$(BUILDREV)$(BINSUFFIX)" ] && echo SUCCESS && exit 0
+# webapi:
+# 	echo building web-api for $(OS)/$(ARCH)
+# 	$(MKDIR) -p $(BINDIR)
+# 	$(GO) build $(GOOPTS) -o $(BINDIR)/web-api-$(BUILDREV)$(BINSUFFIX) $(GOLDFLAGS) web-api
+# 	[ -x "$(BINDIR)/web-api-$(BUILDREV)$(BINSUFFIX)" ] && echo SUCCESS && exit 0
 
 go_get_deps_into_system:
 	make GOGETTER="go get -u" go_get_deps
@@ -75,8 +75,8 @@ go_get_deps:
 deb-pkg: all
 	rm -fr tmppkg
 	$(MKDIR) -p tmppkg/opt/observer/bin tmppkg/etc/observer/ tmppkg/etc/init/
-	$(INSTALL) -D -m 0755 $(BINDIR)/certRetriever-$(BUILDREV)$(BINSUFFIX) tmppkg/opt/observer/bin/certRetriever
-	$(INSTALL) -D -m 0755 $(BINDIR)/certAnalyzer-$(BUILDREV)$(BINSUFFIX) tmppkg/opt/observer/bin/certAnalyzer
+	$(INSTALL) -D -m 0755 $(BINDIR)/Retriever-$(BUILDREV)$(BINSUFFIX) tmppkg/opt/observer/bin/certRetriever
+	$(INSTALL) -D -m 0755 $(BINDIR)/Analyzer-$(BUILDREV)$(BINSUFFIX) tmppkg/opt/observer/bin/certAnalyzer
 	$(INSTALL) -D -m 0755 $(BINDIR)/web-api-$(BUILDREV)$(BINSUFFIX) tmppkg/opt/observer/bin/web-api
 	$(INSTALL) -D -m 0755 $(BINDIR)/retrieveTLSInfo-$(BUILDREV)$(BINSUFFIX) tmppkg/opt/observer/bin/retrieveTLSInfo
 	$(INSTALL) -D -m 0755 conf/retriever.cfg tmppkg/etc/observer/retriever.cfg.inc
