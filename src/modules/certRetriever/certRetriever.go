@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"time"
 
 	"modules"
 )
@@ -20,7 +21,7 @@ type CertChain struct {
 }
 
 func init() {
-	modules.RegisterModule("certretriever", Run())
+	modules.RegisterModule("certretriever", modules.ModulerInfo{InputQueue: "scan_ready_queue", Runner: new(Runner)})
 }
 
 func failOnError(err error, msg string) {
@@ -34,6 +35,9 @@ func panicIf(err error) {
 	if err != nil {
 		log.Println(fmt.Sprintf("%s", err))
 	}
+}
+
+type Runner struct {
 }
 
 //Does the main work by checking host connectivity and retrieving certificates ( if any )
@@ -63,15 +67,16 @@ func checkHost(domainName, port string, skipVerify bool) ([]*x509.Certificate, s
 	return certs, ip, nil
 }
 
-func Run(msg []byte, ch chan modules.ModuleResult) {
+func (*Runner) Run(msg []byte, ch chan modules.ModuleResult) {
 
 	res := modules.ModuleResult{
 		Success:   false,
 		Result:    nil,
-		OutStream: "scan_ready_queue",
+		OutStream: "scan_results_queue",
 		Errors:    nil,
 	}
 
+	log.Println("checking : ", string(msg))
 	certs, ip, err := checkHost(string(msg), "443", true)
 	panicIf(err)
 	if certs == nil {
@@ -96,6 +101,8 @@ func Run(msg []byte, ch chan modules.ModuleResult) {
 	if err != nil {
 		res.Errors = append(res.Errors, err.Error())
 	}
+
+	time.Sleep(5 * time.Second)
 
 	ch <- res
 }

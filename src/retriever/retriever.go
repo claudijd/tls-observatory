@@ -125,6 +125,8 @@ func main() {
 				for {
 					m := <-resChan
 
+					log.Println("got result for ", m.OutStream)
+
 					if m.Success {
 
 						err = ch.Publish(
@@ -142,8 +144,13 @@ func main() {
 				}
 			}()
 
+			log.Println("Waiting for messages on :", modInfo.InputQueue)
+
 			for d := range msgs {
-				go modInfo.RunnerFunc(d.Body, resChan)
+
+				log.Println("got message -- ", string(d.Body), " -- on :", modInfo.InputQueue)
+
+				go modInfo.Runner.(modules.Moduler).Run(d.Body, resChan)
 			}
 
 		}()
