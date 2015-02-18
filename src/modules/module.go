@@ -30,8 +30,9 @@ type ModuleResult struct {
 }
 
 type ModulerInfo struct {
-	InputQueue string
-	Runner     Moduler
+	InputQueue  string
+	MaxRoutines int
+	Runner      Moduler
 }
 
 // AvailableModules stores a list of activated module with their runner

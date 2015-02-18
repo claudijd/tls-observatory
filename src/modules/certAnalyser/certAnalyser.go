@@ -1,4 +1,4 @@
-package main
+package certAnalyzer
 
 import (
 	// stdlib packages
@@ -17,16 +17,82 @@ import (
 	"os"
 	"runtime"
 	"strconv"
-	"sync"
 	"time"
+
+	"modules"
 
 	// custom packages
 	"config"
-
-	// 3rd party dependencies
-	elastigo "github.com/mattbaird/elastigo/lib"
-	"github.com/streadway/amqp"
 )
+
+var trustStores []TrustStore
+
+type Runner struct {
+}
+
+func init() {
+	modules.RegisterModule("certretriever", modules.ModulerInfo{InputQueue: "scan_results_queue", Runner: new(Runner)})
+
+	conf := config.AnalyzerConfig{}
+
+	var cfgFile string
+	flag.StringVar(&cfgFile, "c", "/etc/observer/truststores.cfg", "Input file csv format")
+	flag.Parse()
+
+	_, err := os.Stat(cfgFile)
+	failOnError(err, "Missing configuration file from '-c' or /etc/observer/retriever.cfg")
+
+	conf, err = config.AnalyzerConfigLoad(cfgFile)
+	if err != nil {
+		conf = config.GetAnalyzerDefaults()
+	}
+
+	//Register truststores
+	for i, name := range conf.TrustStores.Name {
+
+		poolData, e := ioutil.ReadFile(conf.TrustStores.Path[i])
+
+		if panicIf(e) {
+			continue
+		}
+
+		certPool := x509.NewCertPool()
+
+		for len(poolData) > 0 {
+
+			var block *pem.Block
+			block, poolData = pem.Decode(poolData)
+			if block == nil {
+				break
+			}
+			if block.Type != "CERTIFICATE" || len(block.Headers) != 0 {
+				continue
+			}
+
+			cert, err := x509.ParseCertificate(block.Bytes)
+			if err != nil {
+
+				log.Println("Could not parse current certificate from :" + name)
+				continue
+			}
+
+			if cert.Version < 3 { //solution for older x509 certificate versions that do not have a CA part
+				cert.IsCA = true
+			}
+
+			certPool.AddCert(cert)
+		}
+
+		trustStores = append(trustStores, TrustStore{name, certPool})
+
+	}
+
+	if len(trustStores) == 0 {
+		defaultName := "default-" + runtime.GOOS
+		// nil Root certPool will result in the system defaults being loaded
+		trustStores = append(trustStores, TrustStore{defaultName, nil})
+	}
+}
 
 var signatureAlgorithm = [...]string{
 	"UnknownSignatureAlgorithm",
@@ -180,26 +246,6 @@ func panicIf(err error) bool {
 	}
 
 	return false
-}
-
-func worker(msgs <-chan amqp.Delivery) {
-
-	forever := make(chan bool)
-	defer wg.Done()
-
-	for d := range msgs {
-
-		chain := CertChain{}
-
-		err := json.Unmarshal(d.Body, &chain)
-		panicIf(err)
-
-		analyseAndPushCertificates(&chain)
-
-		d.Ack(false)
-	}
-
-	<-forever
 }
 
 func analyseAndPushCertificates(chain *CertChain) {
@@ -614,11 +660,9 @@ func certtoStored(cert *x509.Certificate, parentSignature, domain, ip string, TS
 	stored.ValidationInfo[TSName] = *valInfo
 
 	return stored
-
 }
 
-//Print raw extension info
-//for debugging purposes
+//Print raw extension info for debugging purposes
 func printRawCertExtensions(cert *x509.Certificate) {
 
 	for i, extension := range cert.Extensions {
@@ -634,132 +678,24 @@ func printRawCertExtensions(cert *x509.Certificate) {
 
 }
 
-func printIntro() {
-	fmt.Println(`
-	##################################
-	#         CertAnalyzer           #
-	##################################
-	`)
-}
+func (*Runner) Run(msg []byte, ch chan modules.ModuleResult) {
 
-var wg sync.WaitGroup
-var trustStores []TrustStore
-var es *elastigo.Conn
+	res := modules.ModuleResult{
+		Success:   false,
+		Result:    nil,
+		OutStream: "scan_results_queue",
+		Errors:    nil,
+	}
 
-func main() {
-	var (
-		err error
-	)
-	cores := runtime.NumCPU()
-	runtime.GOMAXPROCS(cores * 2)
+	chain := CertChain{}
 
-	printIntro()
+	err := json.Unmarshal(msg, &chain)
 
-	conf := config.AnalyzerConfig{}
-
-	var cfgFile string
-	flag.StringVar(&cfgFile, "c", "/etc/observer/analyzer.cfg", "Input file csv format")
-	flag.Parse()
-
-	_, err = os.Stat(cfgFile)
-	failOnError(err, "Missing configuration file from '-c' or /etc/observer/retriever.cfg")
-
-	conf, err = config.AnalyzerConfigLoad(cfgFile)
 	if err != nil {
-		conf = config.GetAnalyzerDefaults()
+		res.Errors = append(res.Errors, err.Error())
 	}
 
-	conn, err := amqp.Dial(conf.General.RabbitMQRelay)
-	failOnError(err, "Failed to connect to RabbitMQ")
-	defer conn.Close()
+	analyseAndPushCertificates(&chain)
 
-	es = elastigo.NewConn()
-	es.Domain = conf.General.ElasticSearch
-
-	ch, err := conn.Channel()
-	failOnError(err, "Failed to open a channel")
-	defer ch.Close()
-
-	q, err := ch.QueueDeclare(
-		"scan_results_queue", // name
-		true,                 // durable
-		false,                // delete when unused
-		false,                // exclusive
-		false,                // no-wait
-		nil,                  // arguments
-	)
-	failOnError(err, "Failed to declare a queue")
-
-	err = ch.Qos(
-		3,     // prefetch count
-		0,     // prefetch size
-		false, // global
-	)
-
-	failOnError(err, "Failed to set QoS")
-
-	msgs, err := ch.Consume(
-		q.Name, // queue
-		"",     // consumer
-		false,  // auto-ack
-		false,  // exclusive
-		false,  // no-local
-		false,  // no-wait
-		nil,    // args
-	)
-
-	failOnError(err, "Failed to register a consumer")
-
-	//Register truststores
-	for i, name := range conf.TrustStores.Name {
-
-		poolData, e := ioutil.ReadFile(conf.TrustStores.Path[i])
-
-		if panicIf(e) {
-			continue
-		}
-
-		certPool := x509.NewCertPool()
-
-		for len(poolData) > 0 {
-
-			var block *pem.Block
-			block, poolData = pem.Decode(poolData)
-			if block == nil {
-				break
-			}
-			if block.Type != "CERTIFICATE" || len(block.Headers) != 0 {
-				continue
-			}
-
-			cert, err := x509.ParseCertificate(block.Bytes)
-			if err != nil {
-
-				log.Println("Could not parse current certificate from :" + name)
-				continue
-			}
-
-			if cert.Version < 3 { //solution for older x509 certificate versions that do not have a CA part
-				cert.IsCA = true
-			}
-
-			certPool.AddCert(cert)
-		}
-
-		trustStores = append(trustStores, TrustStore{name, certPool})
-
-	}
-
-	if len(trustStores) == 0 {
-		defaultName := "default-" + runtime.GOOS
-		// nil Root certPool will result in the system defaults being loaded
-		trustStores = append(trustStores, TrustStore{defaultName, nil})
-	}
-
-	for i := 0; i < cores; i++ {
-		wg.Add(1)
-		go worker(msgs)
-	}
-
-	wg.Wait()
+	ch <- res
 }

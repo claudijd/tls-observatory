@@ -37,13 +37,13 @@ GOCFLAGS	:=
 MKDIR		:= mkdir
 INSTALL		:= install
 
-all: retriever
+all: retriever analyser retrieveTLSInfo webapi
 
-# retrieveTLSInfo:
-# 	echo building retrieveTLSInfo for $(OS)/$(ARCH)
-# 	$(MKDIR) -p $(BINDIR)
-# 	$(GO) build $(GOOPTS) -o $(BINDIR)/retrieveTLSInfo-$(BUILDREV)$(BINSUFFIX) $(GOLDFLAGS) src/retrieveTLSInfo.go
-# 	[ -x "$(BINDIR)/retrieveTLSInfo-$(BUILDREV)$(BINSUFFIX)" ] && echo SUCCESS && exit 0
+retrieveTLSInfo:
+	echo building retrieveTLSInfo for $(OS)/$(ARCH)
+	$(MKDIR) -p $(BINDIR)
+	$(GO) build $(GOOPTS) -o $(BINDIR)/retrieveTLSInfo-$(BUILDREV)$(BINSUFFIX) $(GOLDFLAGS) src/retrieveTLSInfo.go
+	[ -x "$(BINDIR)/retrieveTLSInfo-$(BUILDREV)$(BINSUFFIX)" ] && echo SUCCESS && exit 0
 
 retriever:
 	echo building retriever for $(OS)/$(ARCH)
@@ -57,11 +57,11 @@ analyser:
 	$(GO) build $(GOOPTS) -o $(BINDIR)/analyzer-$(BUILDREV)$(BINSUFFIX) $(GOLDFLAGS) analyser
 	[ -x "$(BINDIR)/analyzer-$(BUILDREV)$(BINSUFFIX)" ] && echo SUCCESS && exit 0
 
-# webapi:
-# 	echo building web-api for $(OS)/$(ARCH)
-# 	$(MKDIR) -p $(BINDIR)
-# 	$(GO) build $(GOOPTS) -o $(BINDIR)/web-api-$(BUILDREV)$(BINSUFFIX) $(GOLDFLAGS) web-api
-# 	[ -x "$(BINDIR)/web-api-$(BUILDREV)$(BINSUFFIX)" ] && echo SUCCESS && exit 0
+webapi:
+	echo building web-api for $(OS)/$(ARCH)
+	$(MKDIR) -p $(BINDIR)
+	$(GO) build $(GOOPTS) -o $(BINDIR)/web-api-$(BUILDREV)$(BINSUFFIX) $(GOLDFLAGS) web-api
+	[ -x "$(BINDIR)/web-api-$(BUILDREV)$(BINSUFFIX)" ] && echo SUCCESS && exit 0
 
 go_get_deps_into_system:
 	make GOGETTER="go get -u" go_get_deps

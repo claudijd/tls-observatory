@@ -8,14 +8,17 @@ import (
 	"log"
 	"os"
 	"runtime"
+	"sync"
 
 	// custom packages
 	"config"
 	"modules"
 
-	_ "modules/certRetriever"
+	_ "modules/certAnalyser"
 
 	// 3rd party dependencies
+	// elastigo "github.com/mattbaird/elastigo/lib"
+	"github.com/mattbaird/elastigo/lib"
 	"github.com/streadway/amqp"
 )
 
@@ -26,25 +29,25 @@ func failOnError(err error, msg string) {
 	}
 }
 
-func panicIf(err error) {
+func panicIf(err error) bool {
 	if err != nil {
 		log.Println(fmt.Sprintf("%s", err))
+		return true
 	}
-}
 
-func releaseSemaphore() {
-	sem <- true
+	return false
 }
 
 func printIntro() {
 	fmt.Println(`
-	#################################
-	#            Retriever          #
-	#################################
+	##################################
+	#         CertAnalyzer           #
+	##################################
 	`)
 }
 
-var sem chan bool
+var wg sync.WaitGroup
+var es *elastigo.Conn
 
 func main() {
 	var (
@@ -55,23 +58,26 @@ func main() {
 
 	printIntro()
 
-	conf := config.RetrieverConfig{}
+	conf := config.AnalyzerConfig{}
 
 	var cfgFile string
-	flag.StringVar(&cfgFile, "c", "/etc/observer/retriever.cfg", "Input file csv format")
+	flag.StringVar(&cfgFile, "c", "/etc/observer/analyzer.cfg", "Input file csv format")
 	flag.Parse()
 
 	_, err = os.Stat(cfgFile)
 	failOnError(err, "Missing configuration file from '-c' or /etc/observer/retriever.cfg")
 
-	conf, err = config.RetrieverConfigLoad(cfgFile)
+	conf, err = config.AnalyzerConfigLoad(cfgFile)
 	if err != nil {
-		conf = config.GetRetrieverDefaults()
+		conf = config.GetAnalyzerDefaults()
 	}
 
 	conn, err := amqp.Dial(conf.General.RabbitMQRelay)
 	failOnError(err, "Failed to connect to RabbitMQ")
 	defer conn.Close()
+
+	es = elastigo.NewConn()
+	es.Domain = conf.General.ElasticSearch
 
 	ch, err := conn.Channel()
 	failOnError(err, "Failed to open a channel")
@@ -82,6 +88,7 @@ func main() {
 		0,     // prefetch size
 		false, // global
 	)
+
 	failOnError(err, "Failed to set QoS")
 
 	for name, modInfo := range modules.AvailableModules {
