@@ -88,21 +88,22 @@ func main() {
 
 		log.Println("Found module", name)
 
-		q, err := ch.QueueDeclare(
-			modInfo.InputQueue, // name
-			true,               // durable
-			false,              // delete when unused
-			false,              // exclusive
-			false,              // no-wait
-			nil,                // arguments
-		)
+		go func(info modules.ModulerInfo) {
 
-		if err != nil {
-			log.Println("Could not declare queue ", modInfo.InputQueue, "with error - ", err.Error())
-			continue
-		}
+			log.Println("Declaring: ", info.InputQueue)
+			q, err := ch.QueueDeclare(
+				info.InputQueue, // name
+				true,            // durable
+				false,           // delete when unused
+				false,           // exclusive
+				false,           // no-wait
+				nil,             // arguments
+			)
 
-		go func() {
+			if err != nil {
+				log.Println("Could not declare queue ", info.InputQueue, "with error - ", err.Error())
+				return
+			}
 
 			msgs, err := ch.Consume(
 				q.Name, // queue
@@ -146,16 +147,14 @@ func main() {
 				}
 			}()
 
-			log.Println("Waiting for messages on :", modInfo.InputQueue)
+			log.Println("Waiting for messages on :", info.InputQueue)
 
 			for d := range msgs {
 
-				log.Println("got message -- ", string(d.Body), " -- on :", modInfo.InputQueue)
-
-				go modInfo.Runner.(modules.Moduler).Run(d.Body, resChan)
+				go info.Runner.(modules.Moduler).Run(d.Body, resChan)
 			}
 
-		}()
+		}(modInfo)
 
 	}
 	select {}

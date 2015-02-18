@@ -1,4 +1,4 @@
-package certAnalyzer
+package certAnalyser
 
 import (
 	// stdlib packages
@@ -19,10 +19,11 @@ import (
 	"strconv"
 	"time"
 
+	"config"
+
 	"modules"
 
 	// custom packages
-	"config"
 )
 
 var trustStores []TrustStore
@@ -31,7 +32,7 @@ type Runner struct {
 }
 
 func init() {
-	modules.RegisterModule("certretriever", modules.ModulerInfo{InputQueue: "scan_results_queue", Runner: new(Runner)})
+	modules.RegisterModule("certanalyser", modules.ModulerInfo{InputQueue: "scan_results_queue", Runner: new(Runner)})
 
 	conf := config.AnalyzerConfig{}
 
@@ -444,8 +445,8 @@ func pushCertificate(cert *x509.Certificate, parentSignature string, domain, ip,
 		jsonCert, err := json.Marshal(storedCert)
 		panicIf(err)
 
-		_, err = es.Index("certificates", "certificateInfo", SHA256Hash(cert.Raw), nil, jsonCert)
-		panicIf(err)
+		// _, err = es.Index("certificates", "certificateInfo", SHA256Hash(cert.Raw), nil, jsonCert)
+		// panicIf(err)
 		log.Println("Updated cert id", SHA256Hash(cert.Raw), "subject cn", cert.Subject.CommonName)
 	} else {
 
@@ -453,14 +454,14 @@ func pushCertificate(cert *x509.Certificate, parentSignature string, domain, ip,
 		jsonCert, err := json.Marshal(stored)
 		panicIf(err)
 
-		_, err = es.Index("certificates", "certificateInfo", SHA256Hash(cert.Raw), nil, jsonCert)
-		panicIf(err)
+		// _, err = es.Index("certificates", "certificateInfo", SHA256Hash(cert.Raw), nil, jsonCert)
+		// panicIf(err)
 
 		raw := JsonRawCert{base64.StdEncoding.EncodeToString(cert.Raw)}
 		jsonCert, err = json.Marshal(raw)
 		panicIf(err)
-		_, err = es.Index("certificates", "certificateRaw", SHA256Hash(cert.Raw), nil, jsonCert)
-		panicIf(err)
+		// _, err = es.Index("certificates", "certificateRaw", SHA256Hash(cert.Raw), nil, jsonCert)
+		// panicIf(err)
 		log.Println("Stored cert id", SHA256Hash(cert.Raw), "subject cn", cert.Subject.CommonName)
 	}
 
@@ -680,10 +681,12 @@ func printRawCertExtensions(cert *x509.Certificate) {
 
 func (*Runner) Run(msg []byte, ch chan modules.ModuleResult) {
 
+	log.Println("Start Analyser")
+
 	res := modules.ModuleResult{
 		Success:   false,
 		Result:    nil,
-		OutStream: "scan_results_queue",
+		OutStream: "scan_xxx_queue",
 		Errors:    nil,
 	}
 
@@ -698,4 +701,6 @@ func (*Runner) Run(msg []byte, ch chan modules.ModuleResult) {
 	analyseAndPushCertificates(&chain)
 
 	ch <- res
+
+	log.Println("End Analyser")
 }

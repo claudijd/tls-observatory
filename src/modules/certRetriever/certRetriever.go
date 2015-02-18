@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"log"
 	"strings"
-	"time"
 
 	"modules"
 )
@@ -69,6 +68,8 @@ func checkHost(domainName, port string, skipVerify bool) ([]*x509.Certificate, s
 
 func (*Runner) Run(msg []byte, ch chan modules.ModuleResult) {
 
+	log.Println("Start Retriever")
+
 	res := modules.ModuleResult{
 		Success:   false,
 		Result:    nil,
@@ -102,7 +103,11 @@ func (*Runner) Run(msg []byte, ch chan modules.ModuleResult) {
 		res.Errors = append(res.Errors, err.Error())
 	}
 
-	time.Sleep(5 * time.Second)
+	if len(res.Errors) == 0 {
+		res.Success = true
+	}
 
 	ch <- res
+
+	log.Println("End Retriever")
 }
