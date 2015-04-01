@@ -238,6 +238,8 @@ func worker(msgs <-chan []byte) {
 //against each of the truststores provided.
 func handleCertChain(chain *CertChain) {
 
+	t := time.Now()
+
 	var intermediates []*x509.Certificate
 	var leafCert *x509.Certificate
 	leafCert = nil
@@ -261,6 +263,10 @@ func handleCertChain(chain *CertChain) {
 	if leafCert == nil {
 		log.Println("No Server certificate found in chain received by:" + chain.Domain)
 	}
+
+	allcerts := append(intermediates, leafCert)
+
+	retrieveMissingCerts(allcerts)
 
 	var certmap = make(map[string]certStruct)
 
@@ -286,11 +292,44 @@ func handleCertChain(chain *CertChain) {
 
 	}
 
+	elapsed := time.Since(t)
+
+	log.Println("elapsed: ", elapsed)
+
 	for id, certS := range certmap {
 
 		pushCertificate(id, certS.certInfo, certS.certRaw)
 
 	}
+}
+
+func retrieveMissingCerts(curChain []*x509.Certificate) []*x509.Certificate {
+
+	var missingCerts []*x509.Certificate
+
+	for _, c := range curChain {
+		p := getFirstParent(c, curChain)
+		if p == nil {
+
+			log.Println("Did not find parent for: ", c.Subject.CommonName)
+
+			m, err := getCertbyTerm("_id", "5EDB7AC43B82A06A8761E8D7BE4979EBF2611F7DD79BF91C1C6B566A219ED766")
+
+			panicIf(err)
+			if m != nil {
+
+				log.Println("Retrieved parent for: ", c.Subject.CommonName)
+
+				log.Println(m)
+
+				missingCerts = append(missingCerts, m)
+			}
+
+		}
+	}
+
+	return missingCerts
+
 }
 
 //isChainValid creates the valid certificate chains by combining the chain retrieved with the provided truststore.
@@ -554,6 +593,45 @@ func getCert(id string) (StoredCertificate, error) {
 	}
 
 	return stored, err
+}
+
+//getCert tries to retrieve a stored certificate from the database.
+//If the document is not found it returns an error.
+func getx509Cert(id string) (*x509.Certificate, error) {
+
+	res, err := es.SearchbyID(esIndex, esrawType, id)
+
+	rawCert := JsonRawCert{}
+
+	if res.Total > 0 { //Is certificate alreadycollected?
+
+		err = json.Unmarshal(*res.Hits[0].Source, &rawCert)
+	} else {
+
+		return nil, fmt.Errorf("No certificate Retrieved for id: %s", id)
+	}
+
+	rawData, err := base64.StdEncoding.DecodeString(rawCert.RawCert)
+
+	cert, err := x509.ParseCertificate(rawData)
+
+	panicIf(err)
+	return cert, err
+}
+
+//getCertbyTerm tries to retrieve a stored certificate from the database.
+//If the document is not found it returns an error.
+func getCertbyTerm(term, value string) (*x509.Certificate, error) {
+
+	res, err := es.SearchbyTerm(esIndex, esinfoType, term, value)
+
+	if res.Total > 0 && err == nil {
+
+		log.Println("Searching for : ", res.Hits[0].Id)
+		return getx509Cert(res.Hits[0].Id)
+	} else {
+		return nil, fmt.Errorf("No certificate Retrieved for %s: %s", term, value)
+	}
 }
 
 func getExtKeyUsageAsStringArray(cert *x509.Certificate) []string {
