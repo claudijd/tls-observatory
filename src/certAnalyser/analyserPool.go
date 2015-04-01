@@ -266,7 +266,9 @@ func handleCertChain(chain *CertChain) {
 
 	allcerts := append(intermediates, leafCert)
 
-	retrieveMissingCerts(allcerts)
+	missing := retrieveMissingCerts(allcerts)
+
+	intermediates = append(intermediates, missing...)
 
 	var certmap = make(map[string]certStruct)
 
@@ -313,23 +315,19 @@ func retrieveMissingCerts(curChain []*x509.Certificate) []*x509.Certificate {
 
 			log.Println("Did not find parent for: ", c.Subject.CommonName)
 
-			m, err := getCertbyTerm("_id", "5EDB7AC43B82A06A8761E8D7BE4979EBF2611F7DD79BF91C1C6B566A219ED766")
+			m, err := getCertbyTerm("issuer.CommonName", c.Issuer.CommonName)
 
 			panicIf(err)
 			if m != nil {
 
 				log.Println("Retrieved parent for: ", c.Subject.CommonName)
 
-				log.Println(m)
-
 				missingCerts = append(missingCerts, m)
 			}
-
 		}
 	}
 
 	return missingCerts
-
 }
 
 //isChainValid creates the valid certificate chains by combining the chain retrieved with the provided truststore.
