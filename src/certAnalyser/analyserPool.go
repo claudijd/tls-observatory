@@ -378,6 +378,7 @@ func isChainValid(certificate *x509.Certificate, intermediates []*x509.Certifica
 		}
 		return true
 	} else {
+
 		if len(chains) > 0 {
 			log.Println("validation error but validation chain populated for: " + dnsName)
 		}
@@ -433,12 +434,27 @@ func isCertIndexed(ID string) bool {
 //getFirstParent returns the first parent found for a certificate in a given certificate list ( does not verify signature)
 func getFirstParent(cert *x509.Certificate, certs []*x509.Certificate) *x509.Certificate {
 	for _, c := range certs {
+
 		if cert.Issuer.CommonName == c.Subject.CommonName { //TODO : consider changing this check with validating check
 			return c
 		}
 	}
 	//parent not found
 	return nil
+}
+
+func getVerifiedParent(cert *x509.Certificate, certs []*x509.Certificate) *x509.Certificate {
+
+	for _, c := range certs {
+
+		err := cert.CheckSignatureFrom(c)
+		if err == nil {
+			return c
+		}
+	}
+	//parent not found
+	return nil
+
 }
 
 //updateCert takes the input certificate and updates the map holding all the certificates to be pushed.
