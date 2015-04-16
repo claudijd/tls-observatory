@@ -156,11 +156,6 @@ type CertChain struct {
 	Certs  []string `json:"certs"`
 }
 
-type ids struct {
-	_type  string   `json:"type"`
-	values []string `json:"values"`
-}
-
 type JsonRawCert struct {
 	RawCert string `json:"rawCert"`
 }
@@ -264,13 +259,9 @@ func handleCertChain(chain *CertChain) {
 		log.Println("No Server certificate found in chain received by:" + chain.Domain)
 	}
 
-	allcerts := append(intermediates, leafCert)
-
-	missing := retrieveMissingCerts(allcerts)
-
-	intermediates = append(intermediates, missing...)
-
 	var certmap = make(map[string]certStruct)
+
+	anyValid := false
 
 	//validate against each truststore
 	for _, curTS := range trustStores {
@@ -278,6 +269,7 @@ func handleCertChain(chain *CertChain) {
 		if leafCert != nil {
 
 			if isChainValid(leafCert, intermediates, &curTS, chain.Domain, chain.IP, certmap) {
+				anyValid = true
 				continue
 			}
 		}
@@ -292,6 +284,57 @@ func handleCertChain(chain *CertChain) {
 			//should we break if/when this validates?
 		}
 
+	}
+
+	//recheck for missing intermediate certificates
+	if !anyValid {
+
+		allcerts := append(intermediates, leafCert)
+
+		missing := retrieveMissingCerts(allcerts)
+
+		//if any certificate was missing and found proceed with retrying validation
+		if len(missing) != 0 {
+
+			intermediates = append(intermediates, missing...)
+
+			//validate against each truststore
+			for _, curTS := range trustStores {
+
+				if leafCert != nil {
+
+					if isChainValid(leafCert, intermediates, &curTS, chain.Domain, chain.IP, certmap) {
+						anyValid = true
+						continue
+					}
+				}
+
+				// to end up here either there was no leaf certificate retrieved
+				// or it was retrieved but it was not valid so we must check the remainder of the chain
+				for i, cert := range intermediates {
+
+					inter := append(intermediates[:i], intermediates[i+1:]...)
+
+					isChainValid(cert, inter, &curTS, chain.Domain, chain.IP, certmap)
+					//should we break if/when this validates?
+				}
+
+			}
+
+			if anyValid {
+
+				id := SHA256Hash(leafCert.Raw) + "--" + chain.Domain
+
+				stored, ok := certmap[id]
+
+				if ok {
+
+					stored.certInfo.Anomalies = "Incomplete Chain Provided - Certs Downloaded"
+
+					certmap[id] = certStruct{certInfo: stored.certInfo, certRaw: leafCert.Raw}
+				}
+			}
+		}
 	}
 
 	elapsed := time.Since(t)
@@ -318,11 +361,16 @@ func retrieveMissingCerts(curChain []*x509.Certificate) []*x509.Certificate {
 			m, err := getCertbyTerm("issuer.CommonName", c.Issuer.CommonName)
 
 			panicIf(err)
+
 			if m != nil {
 
 				log.Println("Retrieved parent for: ", c.Subject.CommonName)
 
-				missingCerts = append(missingCerts, m)
+				//make sure we did not receive a root CA
+				if m.Issuer.CommonName != m.Subject.CommonName {
+
+					missingCerts = append(missingCerts, m)
+				}
 			}
 		}
 	}
@@ -377,29 +425,27 @@ func isChainValid(certificate *x509.Certificate, intermediates []*x509.Certifica
 			}
 		}
 		return true
-	} else {
-
-		if len(chains) > 0 {
-			log.Println("validation error but validation chain populated for: " + dnsName)
-		}
-
-		valInfo.ValidationError = err.Error()
-		valInfo.IsValid = false
-
-		parentSignature := ""
-		c := getFirstParent(certificate, intermediates)
-
-		if c != nil {
-			parentSignature = SHA256Hash(c.Raw)
-		} else {
-			log.Println("could not retrieve parent for " + dnsName)
-		}
-
-		updateCert(certificate, parentSignature, domain, IP, curTS.Name, valInfo, certmap)
-
-		return false
 	}
 
+	if len(chains) > 0 {
+		log.Println("validation error but validation chain populated for: " + dnsName)
+	}
+
+	valInfo.ValidationError = err.Error()
+	valInfo.IsValid = false
+
+	parentSignature := ""
+	c := getFirstParent(certificate, intermediates)
+
+	if c != nil {
+		parentSignature = SHA256Hash(c.Raw)
+	} else {
+		log.Println("could not retrieve parent for " + dnsName)
+	}
+
+	updateCert(certificate, parentSignature, domain, IP, curTS.Name, valInfo, certmap)
+
+	return false
 }
 
 //isCertIndexed tries to retrieve a certificate with the id provided from the database
@@ -643,9 +689,9 @@ func getCertbyTerm(term, value string) (*x509.Certificate, error) {
 
 		log.Println("Searching for : ", res.Hits[0].Id)
 		return getx509Cert(res.Hits[0].Id)
-	} else {
-		return nil, fmt.Errorf("No certificate Retrieved for %s: %s", term, value)
 	}
+
+	return nil, fmt.Errorf("No certificate Retrieved for %s: %s", term, value)
 }
 
 func getExtKeyUsageAsStringArray(cert *x509.Certificate) []string {
